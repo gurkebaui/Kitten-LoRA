@@ -98,6 +98,9 @@ class DeepOptimizerNetwork(nn.Module):
                 nn.init.orthogonal_(param, gain=0.1)
             elif 'bias' in name:
                 nn.init.zeros_(param)
+
+
+    
     
     def extract_grad_features(self, grad: torch.Tensor) -> torch.Tensor:
         """
@@ -197,6 +200,13 @@ class DeepOptimizerNetwork(nn.Module):
         self.momentum_buffers.clear()
 
 
+    def freeze_lr_head(self):
+        """Friert den LR Head ein, um 'Lazy Disease' zu verhindern."""
+        print("🔒 Freezing LR Head (Manual Safe Mode)")
+        for p in self.lr_head.parameters():
+            p.requires_grad = False
+
+
 class SVDConsolidator:
     """SVD-basierte Wissenskonsolidierung (Korrigiert für Infinite Context)."""
     
@@ -282,6 +292,29 @@ class DeepOptimizerManager:
             for key in ["fast_hidden", "medium_hidden", "slow_hidden"]:
                 h, c = state[key]
                 state[key] = (h.detach(), c.detach())
+
+
+
+    def force_lr_output(self, target_lr: float = 0.5):
+        """
+        Setzt die Gewichte des LR Heads so, dass der Output = target_lr ist.
+        Sigmoid(x) = target_lr  =>  x = log(target_lr / (1 - target_lr))
+        """
+        print(f"🔧 Forcing Deep Opt LR Head to {target_lr}...")
+        # Sigmoid inverse Berechnung
+        bias_input = math.log(target_lr / (1.0 - target_lr))
+        
+        # Wir gehen durch das Modul "lr_head"
+        # (Es ist ein Sequential Block: Linear -> GELU -> Linear -> Sigmoid)
+        # Wir initialisieren das Ganze sehr klein, damit der Bias dominiert
+        for m in self.optimizer_net.lr_head.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.001) # Winzige Gewichtungen
+                with torch.no_grad():
+                    m.bias.fill_(bias_input) # Bias steuert das Ergebnis
+        
+        # Und dann frieren wir es sofort ein
+        self.optimizer_net.freeze_lr_head()
 
 
     # In class DeepOptimizerManager:

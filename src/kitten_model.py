@@ -21,13 +21,16 @@ class HOPEModel(nn.Module):
     Unterstützt Deep Optimizer Integration und Infinite Context.
     """
     
+    CACHE_DIR = Path(__file__).parent.parent / "cache"
+
+    
     def __init__(
         self,
         model_id: str = "Qwen/Qwen3-0.6B",
         config: HOPEConfig = None,
         target_modules: List[str] = None,
         device_map: str = "auto",
-        dtype = torch.bfloat16,  # FIXED: torch_dtype → dtype
+        dtype = torch.bfloat16,  # Das ist der Datentyp für die Gewichte
         cache_dir: Optional[str] = None,
     ):
         super().__init__()
@@ -38,31 +41,50 @@ class HOPEModel(nn.Module):
             "gate_proj", "up_proj", "down_proj"
         ]
         
+        # Pfad-Handling für saubere Cache-Struktur
+        if cache_dir is None:
+            # Falls kein Cache-Ordner angegeben ist, nutzen wir ./cache relativ zum Skript
+            script_dir = Path(__file__).parent.parent.resolve()
+            cache_dir = script_dir / "cache"
+        else:
+            cache_dir = Path(cache_dir)
+            
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # ═════════════════════════════════════════════════════════
+        # Tokenizer laden
+        # ═════════════════════════════════════════════════════════
         print(f"🔧 Lade Tokenizer: {model_id}")
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_id,
-            cache_dir=cache_dir,
+            cache_dir=str(cache_dir),
             trust_remote_code=True,
             padding_side="left",
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
+        # ═════════════════════════════════════════════════════════
+        # Modell laden
+        # ═════════════════════════════════════════════════════════
         print(f"🚀 Lade Modell: {model_id}")
         self.model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            cache_dir=cache_dir,
+            cache_dir=str(cache_dir),
             trust_remote_code=True,
             device_map=device_map,
-            torch_dtype=dtype,  # Transformers erwartet torch_dtype, aber wir nennen den Parameter "dtype"
-            attn_implementation="eager",
+            torch_dtype=dtype,  # Hier übergeben wir den dtype als torch_dtype
+            attn_implementation="eager", # Einfach und stabil
             use_cache=True,
         )
         
+        # ═════════════════════════════════════════════════════════
+        # HOPE LoRA injizieren
+        # ═════════════════════════════════════════════════════════
         self.hope_layers: List[HOPELoRALayer] = []
         self._apply_hope_lora()
         
-        # Deep Optimizer wird extern gesetzt
+        # Deep Optimizer Platzhalter
         self.deep_optimizer = None
         
         print(f"✅ HOPE-Modell bereit mit {len(self.hope_layers)} HOPE-Layern")

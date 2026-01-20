@@ -157,6 +157,8 @@ class HOPELoRALayer(nn.Module):
         super().__init__()
         
         self.config = config or HOPEConfig()
+
+        self.last_update_norm = 0.0
         
         # Base Layer einfrieren
         self.base = base_linear
@@ -422,6 +424,9 @@ class HOPELoRALayer(nn.Module):
                 
                 state.slow = state.slow + self.config.lr_slow * update_signal
                 state.slow_accum.zero_()
+
+            update_strength = delta_fast.norm().item()
+            self.last_update_norm = update_strength
     
     def get_memory_stats(self) -> Dict[str, float]:
         """Gibt Memory-Statistiken zurück."""

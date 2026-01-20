@@ -37,7 +37,7 @@ MODEL_ID = "Qwen/Qwen3-0.6B"
 
 # Training
 MAX_SEQ_LEN = 512
-BATCH_SIZE = 2        # 16GB VRAM sollte BS=2 problemlos schaffen
+BATCH_SIZE = 1       # 16GB VRAM sollte BS=2 problemlos schaffen
 NUM_EPOCHS = 50
 LOG_INTERVAL = 10
 SAVE_INTERVAL = 500
@@ -72,7 +72,7 @@ HOPE_CONFIG = HOPEConfig(
     use_newton_schulz=False, # scützt vor Instabilitäten    wenn true 
     
     # Sehr langsamer Decay (0.9999 ≈ Unendlich, 0.9995 ist stabil)
-    memory_decay=0.999,    
+    memory_decay=0.9995,    
     
     surprise_threshold=-1.0,
     
@@ -220,24 +220,31 @@ class KittenFullTrainer:
                 attention_mask=batch["attention_mask"],
                 labels=batch["labels"],
             )
+            
             loss = outputs.loss
             
-            # Backward für Base Optimizer
-            loss.backward()
+            # ═════════════════════════════════════════════════════
+            # NEU: WRITE INCENTIVE (Der "Zwang")
+            # ═════════════════════════════════════════════════════
+            # Wir sammeln die "Schreibstärke" aller Layer
+            # Wir belohnen nicht die *Bewegung* (delta), sondern die *Füllung* (state)!
+            # Das Modell muss das Memory aufbauen, nicht nur wackeln.
+            #total_memory_volume = 0.0
+            #for layer in self.model.hope_layers:
+                #if layer._memory_state is not None:
+                    #s = layer._memory_state
+                    # Durchschnittliche absolute Füllung über alle Ebenen
+                    #volume = s.fast.abs().mean().item()
+                    ##volume += s.medium.abs().mean().item()
+                    #volume += s.slow.abs().mean().item()
+                    #total_memory_volume += volume
             
-            # Deep Optimizer wendet Updates an (nicht-differenzierbar, Phase A)
-            self.deep_optimizer.step(
-                hope_layers=self.model.hope_layers,
-                main_loss=loss,
-                do_meta_update=False,  # KEIN Meta-Update in Phase A!
-            )
-            
-            # Base Optimizer Step
-            torch.nn.utils.clip_grad_norm_(
-                get_base_optimizer_params(self.model),
-                1.0
-            )
-            self.base_optimizer.step()
+            # Wir belohnen, dass das Memory gefüllt wird
+            loss = loss #- (0.1 * total_memory_volume)
+
+            # OPTION B (Weiches Abbremsen):
+            # Faktor sehr klein, um das Memory stabil zu halten, aber nicht mehr prioritär.
+            # loss = loss - (0.0001 * total_memory_volume)
             
             # ═════════════════════════════════════════════════════
             # PHASE B: META TRAINING (alle N Steps)
@@ -357,7 +364,7 @@ class KittenFullTrainer:
             
             # Regularisierung: Verhindere zu große Updates
             reg_loss = sum(lr ** 2 for lr in lr_tensors.values()) * 0.1
-            meta_loss = (loss_after - loss_before.detach()) + reg_loss
+            meta_loss = loss_after - loss_before.detach()
             
             # ═══════════════════════════════════════════════════════
             # 7. Backprop durch den Deep Optimizer
@@ -381,6 +388,34 @@ class KittenFullTrainer:
             print(f"⚠️ Meta-Learning Error: {e}")
             self._restore_snapshot(snapshot)
             return None
+        
+
+
+    def reset_cheating_agents(self):
+        """
+        Hard Reset: Löscht das 'Spam'-Wissen der Update Netzwerke.
+        1. Re-Init der Gewichte (update_fast/medium/slow).
+        2. Reset des Memory States.
+        """
+        print("🧹 HARD RESET: Lösche 'Cheating' Update Weights und Memory...")
+        
+        # 1. Weights resetten
+        for layer in self.model.hope_layers:
+            for net in [layer.update_fast, layer.update_medium, layer.update_slow]:
+                # Wir gehen durch die MODULE (Layer), nicht die Parameter
+                for m in net.modules():
+                    if isinstance(m, nn.Linear):
+                        nn.init.normal_(m.weight, std=0.01)
+                        # Bias nur resetten, wenn er existiert
+                        if m.bias is not None:
+                            nn.init.zeros_(m.bias)
+        
+        # 2. Memory resetten
+        self.model.reset_memory(1)
+        
+        print("✅ Reset komplett. System ist clean.")
+        
+        print("✅ Reset komplett. System ist clean.")
     
     def _create_snapshot(self) -> Dict:
         """Erstellt einen Snapshot des aktuellen Zustands."""
@@ -557,6 +592,8 @@ def main():
     val_loader = DataLoader(tokenized["validation"], batch_size=BATCH_SIZE, num_workers=0)
     
     trainer = KittenFullTrainer(model, train_loader, val_loader)
+    trainer.reset_cheating_agents()
+    trainer.deep_optimizer.force_lr_output(target_lr=0.5)
     trainer.train()
     
     quick_test(model)
