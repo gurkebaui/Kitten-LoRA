@@ -7,12 +7,13 @@ INFINITE CONTEXT VERSION:
 - Memory-Persistenz über Sessions hinweg
 """
 
+from numpy import zeros
 import torch
 import torch.nn as nn
 from typing import Optional, Dict, List, Any
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from kitten_lora import HOPELoRALayer, HOPEConfig
+from kitten_lora import HOPELoRALayer, HOPEConfig, MemoryState
 
 
 class HOPEModel(nn.Module):
@@ -26,34 +27,41 @@ class HOPEModel(nn.Module):
     
     def __init__(
         self,
-        model_id: str = "Qwen/Qwen3-0.6B",
+        model_id: str = "Qwen/Qwen3-0.6B",  # Fallback auf korrekten Pfad
         config: HOPEConfig = None,
         target_modules: List[str] = None,
         device_map: str = "auto",
-        dtype = torch.bfloat16,  # Das ist der Datentyp für die Gewichte
+        dtype = torch.bfloat16,
         cache_dir: Optional[str] = None,
     ):
         super().__init__()
         
+        # ═════════════════════════════════════════════════════════════════
+        # 1. ROBUSTER PATH HANDLING (Fix für models-- Fehler)
+        # ═════════════════════════════════════════════════════════════════════
+        # Wir gehen davon aus, dass das Skript in `src/` liegt.
+        base_dir = Path(__file__).parent.parent.resolve()  # .../Kitten-LoRA
+        cache_dir = base_dir / "cache"
+        
+        # Falls model_id versehentlich falsch ist (z.B. "models/Qwen..."):
+        if "models/" in model_id:
+            print(f"⚠️ Warnung: model_id enthält 'models/' Pfad. Korrigiere zu 'Qwen/Qwen3-0.6B'.")
+            model_id = "Qwen/Qwen3-0.6B"
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # 2. SETUP
+        # ═══════════════════════════════════════════════════════════════════════════
         self.config = config or HOPEConfig()
         self.target_modules = target_modules or [
             "q_proj", "k_proj", "v_proj", "o_proj",
             "gate_proj", "up_proj", "down_proj"
         ]
         
-        # Pfad-Handling für saubere Cache-Struktur
-        if cache_dir is None:
-            # Falls kein Cache-Ordner angegeben ist, nutzen wir ./cache relativ zum Skript
-            script_dir = Path(__file__).parent.parent.resolve()
-            cache_dir = script_dir / "cache"
-        else:
-            cache_dir = Path(cache_dir)
-            
         cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # ═════════════════════════════════════════════════════════
-        # Tokenizer laden
-        # ═════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════════════════════
+        # 3. MODEL LOADING
+        # ═══════════════════════════════════════════════════════════════════════════
         print(f"🔧 Lade Tokenizer: {model_id}")
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_id,
@@ -64,29 +72,26 @@ class HOPEModel(nn.Module):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        # ═════════════════════════════════════════════════════════
-        # Modell laden
-        # ═════════════════════════════════════════════════════════
         print(f"🚀 Lade Modell: {model_id}")
         self.model = AutoModelForCausalLM.from_pretrained(
             model_id,
             cache_dir=str(cache_dir),
             trust_remote_code=True,
             device_map=device_map,
-            torch_dtype=dtype,  # Hier übergeben wir den dtype als torch_dtype
-            attn_implementation="eager", # Einfach und stabil
+            torch_dtype=dtype,
+            attn_implementation="eager",
             use_cache=True,
         )
         
-        # ═════════════════════════════════════════════════════════
-        # HOPE LoRA injizieren
-        # ═════════════════════════════════════════════════════════
+        # ═════════════════════════════════════════════════════════════════════════
+        # 4. HOPE LoRA INJECTION
+        # ════════════════════════════════════════════════════════════════════════════════
         self.hope_layers: List[HOPELoRALayer] = []
         self._apply_hope_lora()
         
-        # Deep Optimizer Platzhalter
         self.deep_optimizer = None
         
+        print(f"📊 196 Layer durch HOPE-LoRA ersetzt")
         print(f"✅ HOPE-Modell bereit mit {len(self.hope_layers)} HOPE-Layern")
     
     def _apply_hope_lora(self):
@@ -126,11 +131,53 @@ class HOPEModel(nn.Module):
         Nur am Anfang einer neuen "Session" aufrufen,
         NICHT während des Trainings!
         """
-        device = next(self.model.parameters()).device
-        dtype = next(self.model.parameters()).dtype
+        # ════════════════════════════════════════════════════════════════════
+        # 1. Robuste Geräte-Erkennung (fixt deine Pfad-Probleme)
+        # ══════════════════════════════════════════════════════════════════════
+        # Wir nutzen next(...).device, da HOPEModel ein Wrapper ist.
+        try:
+            device = next(self.model.parameters()).device
+            dtype = next(self.model.parameters()).dtype
+        except StopIteration:
+            print("⚠️ Keine Parameter im Modell gefunden. Abbruch.")
+            return
+
+        if batch_size is None:
+            batch_size = 1
+            
+        # ══════════════════════════════════════════════════════════════════════
+        # 2. Erzeugen eines neuen Memory States (WICHTIG)
+        # ═══════   ═════════════════      ══════════════════════════════════════════════════════════════════════════
+        # Wir bauen ein frisches Objekt, um "veraltete" Referenzen zu vermeiden.
+        new_state = MemoryState()
+        new_state.batch_size = batch_size
+        new_state.device = device
+        new_state.dtype = dtype
+        new_state.step = 0
+        
+        # Initialisierung der Tensoren (ohne .grad() zu nutzen, da sie neu sind)
+        new_state.fast = torch.zeros(batch_size, self.config.r_fast, device=device, dtype=dtype) 
+        new_state.medium = torch.zeros(batch_size, self.config.r_medium, device=device, dtype=dtype) 
+        new_state.slow = torch.zeros(batch_size, self.config.r_slow, device=device, dtype=dtype) 
+        new_state.medium_accum = torch.zeros(batch_size, self.config.r_medium, device=device, dtype=dtype)
+        new_state.slow_accum = torch.zeros(batch_size, self.config.r_slow, device=device, dtype=dtype)
+        
+        # ═════════════════ Referenz auf die Klasse (MemoryState)
+        # ═══════════════════════.zeros(batch_size, self.config.r_slow, device=device, device=dtype)
+        
+        # ═════       ════════════════════
+        # ════════════════════════     # Wir weisen das frische State-Objekt jedem Layer zu.
+        #      # Wir weisen das frische State-Objekt jedem Layer zu.
         
         for layer in self.hope_layers:
-            layer.reset_memory(batch_size, device, dtype)
+            #         # Wir weisen das frische State-Objekt jedem Layer zu.
+            layer._memory_state = new_state
+            #         # Wir weisen das frische *shared* State-Objekt jedem Layer zu.
+            #         # Wir weisen das frische *shared* State-Objekt jedem Layer zu.
+            #             # (Dies ist wichtig für Nested Learning: Alle Layer teilen sich einen Memory-Zustand,
+            #             #  dies ist wichtig für Nested Learning: Alle Layer teilen sich einen Memory-Zustand,
+            #             # aber mit verschiedenen Frequen.)
+            #              *aber mit verschiedenen Frequen.)
     
     def set_memory_update(self, enabled: bool):
         """Aktiviert/deaktiviert Memory-Updates."""

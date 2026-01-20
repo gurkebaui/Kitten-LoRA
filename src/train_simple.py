@@ -24,16 +24,21 @@ from kitten_lora import HOPEConfig
 # ═════════════════════════════════════════════════════════
 # Konfiguration
 # ═════════════════════════════════════════════════════════
+smol = False  # Setze auf True für das kleine Modell (0.6B), False für 1.7B
+
+
 SCRIPT_DIR = Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent / "data"
-OUTPUT_DIR = SCRIPT_DIR.parent / "models" / "kitten_simple"
+OUTPUT_DIR = SCRIPT_DIR.parent / "models" / "kitten_simple_big" if smol == False else SCRIPT_DIR.parent / "models" / "kitten_simple_smol"
 CACHE_DIR = SCRIPT_DIR.parent / "cache"
 
-MODEL_ID = "Qwen/Qwen3-0.6B"
+
+
+MODEL_ID = "Qwen/Qwen3-1.7B" if smol == False else "Qwen/Qwen3-0.6B"
 
 # Training
 MAX_SEQ_LEN = 512
-BATCH_SIZE = 2       # Absolut sicher für 16GB VRAM
+BATCH_SIZE = 2 if smol else 1      # Absolut sicher für 16GB VRAM
 NUM_EPOCHS = 50
 LOG_INTERVAL = 10
 SAVE_INTERVAL = 500
@@ -41,17 +46,18 @@ SAVE_INTERVAL = 500
 # Garbage Collection
 GC_INTERVAL = 10
 EMPTY_CACHE_INTERVAL = 100
-
 # ═════════════════════════════════════════════════════════
 # HOPE Config (Bleibt gleich - die Architektur ist perfekt)
 # ═════════════════════════════════════════════════════════
 HOPE_CONFIG = HOPEConfig(
-    r_fast=8,
-    r_medium=32,
-    r_slow=64,
-    chunk_medium=16,
-    chunk_slow=64,
-    hidden_dim=64,
+    
+    
+    r_fast=8 if smol else 16,
+    r_medium=32 if smol else 64,
+    r_slow=64 if smol else 128,
+    chunk_medium=16 if smol else 32,
+    chunk_slow=64 if smol else 128,
+    hidden_dim=64 if smol else 128,
     
     # WICHTIG: Kein Newton-Schulz für mehr "natürliche" Updates
     use_newton_schulz=False, 
@@ -60,7 +66,7 @@ HOPE_CONFIG = HOPEConfig(
     memory_decay=0.9995,
     
     # Wir filtern jetzt nicht so hart, das machen die Gewichte selbst
-    surprise_threshold=0.5, 
+    surprise_threshold=-1.0, 
     
     # Die LRs hier werden nur für die *Initialisierung* der Update-Netzwerke verwendet
     lr_fast=0.2,

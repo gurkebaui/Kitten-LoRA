@@ -1,0 +1,17 @@
+{
+  "streaming_facts": {
+    "accuracy": 0.0,
+    "tokens": 41383,
+    "beyond_context": true
+  },
+  "passkey_extreme": {
+    "accuracy": 0.0,
+    "tokens": 40088,
+    "beyond_context": true
+  },
+  "multiturn": {
+    "accuracy": 0.0,
+    "tokens": 21644,
+    "beyond_context": true
+  }
+}

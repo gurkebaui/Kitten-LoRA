@@ -1,0 +1,88 @@
+{
+  "summary": {
+    "passkey_avg_accuracy": 1.0,
+    "fact_retention_avg": 0.9666666666666667,
+    "memory_persistence": 0.0,
+    "total_tests": 13
+  },
+  "details": [
+    {
+      "task": "passkey_start",
+      "context_length": 512,
+      "accuracy": 1.0,
+      "memory_retention": 0.008858816964285714
+    },
+    {
+      "task": "passkey_middle",
+      "context_length": 512,
+      "accuracy": 1.0,
+      "memory_retention": 0.007295331176446408
+    },
+    {
+      "task": "passkey_end",
+      "context_length": 512,
+      "accuracy": 1.0,
+      "memory_retention": 0.006560126129461795
+    },
+    {
+      "task": "passkey_start",
+      "context_length": 1024,
+      "accuracy": 1.0,
+      "memory_retention": 0.0036670772396788305
+    },
+    {
+      "task": "passkey_middle",
+      "context_length": 1024,
+      "accuracy": 1.0,
+      "memory_retention": 0.003632482217282665
+    },
+    {
+      "task": "passkey_end",
+      "context_length": 1024,
+      "accuracy": 1.0,
+      "memory_retention": 0.005513064715327049
+    },
+    {
+      "task": "passkey_start",
+      "context_length": 2048,
+      "accuracy": 1.0,
+      "memory_retention": 0.011854643724402604
+    },
+    {
+      "task": "passkey_middle",
+      "context_length": 2048,
+      "accuracy": 1.0,
+      "memory_retention": 0.008948764022515744
+    },
+    {
+      "task": "passkey_end",
+      "context_length": 2048,
+      "accuracy": 1.0,
+      "memory_retention": 0.01324522251985511
+    },
+    {
+      "task": "fact_retention_3",
+      "context_length": 1800,
+      "accuracy": 1.0,
+      "memory_retention": 0.7191853425940689
+    },
+    {
+      "task": "fact_retention_5",
+      "context_length": 3000,
+      "accuracy": 1.0,
+      "memory_retention": 0.7441259890186543
+    },
+    {
+      "task": "fact_retention_10",
+      "context_length": 6000,
+      "accuracy": 0.9,
+      "memory_retention": 0.6981472093231824
+    },
+    {
+      "task": "memory_persistence",
+      "context_length": 5,
+      "accuracy": 0.0,
+      "memory_retention": 0.2126822179677535
+    }
+  ]
+}

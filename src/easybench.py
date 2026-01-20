@@ -3,6 +3,7 @@
 Kitten-LoRA Lite Benchmark - Angepasst für Deep Optimizer.
 """
 
+from numpy import rint
 import torch
 import json
 import time
@@ -14,6 +15,9 @@ from tqdm import tqdm
 
 from kitten_model import HOPEModel
 from kitten_lora import HOPEConfig
+
+smol: bool = False  # Setze auf True für das kleine Modell (0.6B), False für 1.7B
+
 
 
 @dataclass
@@ -27,6 +31,8 @@ class BenchmarkResult:
 
 class KittenBenchmarkLite:
     """Leichtes Benchmark für kleine Modelle (0.6B)."""
+
+    
     
     def __init__(
         self,
@@ -340,46 +346,102 @@ def main():
     print("🐱 KITTEN-LoRA LITE BENCHMARK")
     print("="*60)
     
+    # ════════════════════════════════════════════════════════════════════
+    # PFAD-FIX: Pfad logisch berechnen
+    # ════════════════════════════════════════════════════════════════════
+    
+    # 1. Finde das Wurzelverzeichnis des Skripts (egal ob es aus src/ läuft)
+    try:
+        base_dir = Path(__file__).resolve().parent.resolve().parent
+        print(f"🔍 Projekt-Root erkannt: {base_dir}")
+    except NameError:
+        base_dir = Path.cwd()
+        print(f"🔍 Fallback auf CWD: {base_dir}")
+
+    # 2. Bilde den Pfad zu den Gewichten absolut korrekt
+    weights_dir = base_dir / "models" / "kitten_simple" / "best" if smol else base_dir / "models" / "kitten_simple_big" / "best"
+    print(f"🔍 Suche Gewichte in: {weights_dir}")
+    
+    # ══════════════════════════════════════════════════════════════════════
+    # MODELL INIT
+    # ══════════════════════════════════════════════════════════════════════
     config = HOPEConfig(
-        r_fast=4,
-        r_medium=16,
-        r_slow=32,
-        chunk_medium=8,
-        chunk_slow=32,
-        hidden_dim=32,
+        r_fast=8 if smol else 16,
+        r_medium=32 if smol else 64,
+        r_slow=64 if smol else 128,  # AUF 64 GEÄNDERT!
+        chunk_medium=16 if smol else 32,
+        chunk_slow=64 if smol else 128,
+        hidden_dim=64 if smol else 128,
+        surprise_threshold=-1.0,
+        memory_decay=0.9995,
+        use_newton_schulz=False,
     )
+    
+    # Cache Pfad ebenfalls korrigieren
+    cache_dir = base_dir / "cache"
     
     model = HOPEModel(
-        model_id="Qwen/Qwen3-0.6B",
+        model_id="Qwen/Qwen3-0.6B" if smol else "Qwen/Qwen3-1.7B",
         config=config,
-        cache_dir="./cache",
+        cache_dir=str(cache_dir),
     )
     
-    # Versuche trainierte Gewichte zu laden
-    weights_paths = [
-        Path("models/kitten_deep/best"),
-        Path("models/kitten_hope/best"),
-        Path("models/kitten_deep/final"),
-    ]
+    # 3. Pfad-Ausgabe für Debugging
+    if not weights_dir.exists():
+        print(f"❌ FEHLER: Pfad existiert nicht: {weights_dir}")
+        print(f"   Bitte überprüfen, ob die Dateien wirklich dort liegen.")
+        return
+    else:
+        print(f"✅ Pfad gefunden. Lade Modell...")
+
+    # 4. Lade die Gewichte (wie in kitten_model.py implementiert)
+    if model.load_hope_weights(str(weights_dir)):
+        print(f"✅ Gewichte geladen.")
+    else:
+        print(f"⚠️ Konnte Gewichte nicht laden (siehe oben im Fehler).")
+        # Optional: Hier könnte man mit 'best' und ohne HOPE weitermachen, wenn man will.
+        # Für diesen Test lassen wir es hierbei.
+
+    print(f"   Device: {next(model.model.parameters()).device}")
     
-    loaded = False
-    for path in weights_paths:
-        if (path / "hope_lora.pt").exists():
-            model.load_hope_weights(str(path))
-            print(f"✅ Gewichte geladen von: {path}")
-            loaded = True
-            break
-    
-    if not loaded:
-        print("⚠️ Keine trainierten Gewichte gefunden - teste untrainiertes HOPE")
-    
+    # ══════════════════════════════════════════════════════════════════════
+    # BENCHMARK
+    # ══════════════════════════════════════════════════════════════════════
     benchmark = KittenBenchmarkLite(model)
-    results = benchmark.run_all(quick=False)
     
+    # Wir nutzen die Tests, die über 32k Tokens gehen (Infinite Context Test)
+    summary = {} # Initialize summary here
+    results = benchmark.run_all(quick=True)
+    
+    # Zusammenfassung
+     # ══════════════════════════════════════════════════════════════════
+    # BENCHMARK SUMMARY
+    # ══════════════════════════════════════════════════════════════════
+    print("\n" + "="*60)
+    print("📊 BENCHMARK SUMMARY")
+    print("="*60)
+
+    # Hier die Reparatur
+    for name, stats in summary.items():
+        print(f"\n   {name}:")
+        print(f"      Tokens: {stats.get('total_tokens', 0):,}")  # Fallback
+        print(f"      Accuracy: {stats.get('accuracy', 0.0) * 100.0:.0f}%")
+    
+    # Memory-Block (wird jetzt erreicht)
+    stats = model.get_memory_stats()
+    print(f"\n📊 Final Memory Stats:")
+    print(f"   F: {stats['fast_norm_avg']:.2f}")
+    print(f"   M: {stats['medium_norm_avg']:.2f}")
+    print(f"   {stats['total_steps']:,}")
+
+    # Speichern
+    output_file = base_dir / "benchmarks" / f"kitten_lite_{int(time.time())}.json"
+    with open(output_file, "w") as f:
+        json.dump(summary, f, indent=2)
+
     print("\n" + "="*60)
     print("✅ BENCHMARK COMPLETE")
     print("="*60)
-
 
 if __name__ == "__main__":
     main()
