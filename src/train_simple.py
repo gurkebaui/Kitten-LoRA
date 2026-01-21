@@ -24,12 +24,13 @@ from kitten_lora import HOPEConfig
 # ═════════════════════════════════════════════════════════
 # Konfiguration
 # ═════════════════════════════════════════════════════════
-smol = False  # Setze auf True für das kleine Modell (0.6B), False für 1.7B
+smol = True  # Setze auf True für das kleine Modell (0.6B), False für 1.7B
+big_data = True  # Setze auf True, wenn du das große Dataset (data2) verwenden möchtest
 
 
 SCRIPT_DIR = Path(__file__).parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
-OUTPUT_DIR = SCRIPT_DIR.parent / "models" / "kitten_simple_big" if smol == False else SCRIPT_DIR.parent / "models" / "kitten_simple_smol"
+DATA_DIR = SCRIPT_DIR.parent / "data3" if big_data else SCRIPT_DIR.parent / "data" 
+OUTPUT_DIR = SCRIPT_DIR.parent / "models" / "kitten_simple_big" if smol == False else SCRIPT_DIR.parent / "models" / "kitten_simple_smol2" if big_data == True else SCRIPT_DIR.parent / "models" / "kitten_simple"
 CACHE_DIR = SCRIPT_DIR.parent / "cache"
 
 
@@ -39,7 +40,7 @@ MODEL_ID = "Qwen/Qwen3-1.7B" if smol == False else "Qwen/Qwen3-0.6B"
 # Training
 MAX_SEQ_LEN = 512
 BATCH_SIZE = 2 if smol else 1      # Absolut sicher für 16GB VRAM
-NUM_EPOCHS = 50
+NUM_EPOCHS = 10
 LOG_INTERVAL = 10
 SAVE_INTERVAL = 500
 
