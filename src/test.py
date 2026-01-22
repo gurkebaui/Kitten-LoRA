@@ -49,7 +49,7 @@ def find_best_weights() -> Path | None:
         MODELS_DIR / "kitten_simple_smol2" / "best" if smol else MODELS_DIR / "kitten_simple_big" / "best",
         MODELS_DIR / "kitten_full" / "best",
         MODELS_DIR / "kitten_simple" / "final",
-        MODELS_DIR / "kitten_simple_big" / "step_42500",
+        MODELS_DIR / "kitten_simple_smol2_mem" / "step_1500",
     ]
 
     for path in candidates:

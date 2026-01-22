@@ -38,7 +38,7 @@ NUM_EPOCHS = 3    # Wie viele Epochen soll DIESER Run laufen?
 # -----------------------------
 
 SCRIPT_DIR = Path(__file__).parent
-DATA_DIR = SCRIPT_DIR.parent / "data5" if big_data else SCRIPT_DIR.parent / "data"
+DATA_DIR = SCRIPT_DIR.parent / "data4" if big_data else SCRIPT_DIR.parent / "data"
 OUTPUT_DIR = (
     SCRIPT_DIR.parent / "models" / "kitten_simple_big"
     if not smol
@@ -121,7 +121,7 @@ def load_dataset_kitten(tokenizer):
 # Trainer
 # ═════════════════════════════════════════════════════════
 class SimpleHOPETrainer:
-    def __init__(self, model, train_loader, val_loader, train_lora_weights=True): 
+    def __init__(self, model, train_loader, val_loader, train_lora_weights=False):  # train_lora_weights: bool
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
