@@ -108,14 +108,14 @@ class HOPEConfig:
     - Größere Chunks für langsamere Konsolidierung
     """
     # Memory Ranks (Kapazität)
-    r_fast: int = 8       # Kurzzeitgedächtnis (war 4)
-    r_medium: int = 32    # Mittelfristiges Gedächtnis (war 16)
-    r_slow: int = 64      # Langzeitgedächtnis (war 32)
-    
+    r_fast: int = 16       # Kurzzeitgedächtnis (war 4)
+    r_medium: int = 64    # Mittelfristiges Gedächtnis (war 16)
+    r_slow: int = 128      # Langzeitgedächtnis (war 32)
+
     # Chunk Sizes (Zeitskalen für Nested Learning)
-    chunk_medium: int = 16  # Update alle 16 Tokens (war 8)
-    chunk_slow: int = 64    # Update alle 64 Tokens (war 32)
-    
+    chunk_medium: int = 32  # Update alle 32 Tokens (war 16)
+    chunk_slow: int = 128    # Update alle 128 Tokens (war 32)
+
     # LoRA Scaling
     alpha: float = 1.0
     
@@ -128,7 +128,7 @@ class HOPEConfig:
     lr_slow: float = 0.01    # (war 0.01)
 
     # Hidden Dimension für Update Networks
-    hidden_dim: int = 64     # Größer für komplexere Muster (war 32)
+    hidden_dim: int = 128     # Größer für komplexere Muster (war 32)
     
     # Stabilisierung
     use_newton_schulz: bool = False  # (war True)

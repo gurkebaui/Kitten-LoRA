@@ -9,20 +9,36 @@ from pathlib import Path
 # ======================================================
 SCRIPT_DIR = Path(__file__).parent
 
-LOGS_DIR = SCRIPT_DIR / "logs"        # klassisches Discord-Log
-DAATA_DIR = SCRIPT_DIR / "daata"      # Discord-Export TXT
-PERSONA_DIR = SCRIPT_DIR / "persona"  # handgeschriebene Persona (.jsonl)
+LOGS_DIR = SCRIPT_DIR / "logs"
+DAATA_DIR = SCRIPT_DIR / "daata"
+PERSONA_DIR = SCRIPT_DIR / "persona"
 
 OUTPUT_DIR = SCRIPT_DIR / "data3"
 
 MAX_GAP_SECONDS = 600
 TRAIN_SPLIT = 0.9
-
-# WICHTIGER HEBEL
-PERSONA_OVERSAMPLE = 140   # 10–30 realistisch sinnvoll
+PERSONA_OVERSAMPLE = 20   # ggf. 10–20
 
 # ======================================================
-# 2. PARSER – logs/
+# 2. LINK / GIF FILTER (HART)
+# ======================================================
+URL_REGEX = re.compile(r"https?://\S+", re.IGNORECASE)
+
+def clean_text(text: str) -> str:
+    """
+    Entfernt ALLE URLs (Tenor, Discord CDN, alles).
+    Gibt bereinigten Text zurück oder "".
+    """
+    text = URL_REGEX.sub("", text)
+
+    # Whitespaces normalisieren
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+# ======================================================
+# 3. PARSER – logs/
 # ======================================================
 LOGS_REGEX = re.compile(
     r"\[(?P<timestamp>[\d\-T:\.]+)\]\s+(?P<author>[^:]+):\s*(?P<message>.*)"
@@ -38,15 +54,17 @@ def parse_logs_line(line: str):
     except ValueError:
         return None
 
-    msg = m.group("message").strip()
-    if not msg or msg.startswith("[ATTACHMENT") or msg.startswith("<@"):
+    msg = clean_text(m.group("message").strip())
+    if not msg:
+        return None
+
+    if msg.startswith("[ATTACHMENT") or msg.startswith("<@"):
         return None
 
     return ts, m.group("author").strip(), msg
 
-
 # ======================================================
-# 3. PARSER – daata/
+# 4. PARSER – daata/
 # ======================================================
 DAATA_HEADER_REGEX = re.compile(
     r"\[(?P<date>\d{1,2}/\d{1,2}/\d{4})\s+"
@@ -67,13 +85,8 @@ def parse_daata_file(path: Path):
         if not current_ts or not current_author or not buffer:
             return
 
-        content = "\n".join(buffer).strip()
-        if (
-            not content
-            or content.startswith("{Attachments}")
-            or content.startswith("{Embed}")
-            or content.startswith("{Reactions}")
-        ):
+        content = clean_text("\n".join(buffer).strip())
+        if not content:
             return
 
         messages.append((current_ts, current_author, content))
@@ -106,9 +119,8 @@ def parse_daata_file(path: Path):
 
     return messages
 
-
 # ======================================================
-# 4. KONVERSATIONEN BAUEN
+# 5. KONVERSATIONEN BAUEN
 # ======================================================
 def build_conversations(messages):
     conversations = []
@@ -144,25 +156,52 @@ def build_conversations(messages):
 
     return conversations
 
-
 # ======================================================
-# 5. PERSONA LADEN
+# 6. PERSONA LADEN
 # ======================================================
 def load_persona():
     persona = []
+
     if not PERSONA_DIR.exists():
+        print("ℹ️ Kein persona/-Ordner gefunden.")
         return persona
 
     for file in PERSONA_DIR.glob("*.jsonl"):
+        print(f"🎭 Lade Persona-Datei: {file.name}")
         with open(file, encoding="utf-8") as f:
-            for line in f:
-                persona.append(json.loads(line))
+            for line_num, line in enumerate(f, start=1):
+                line = line.strip()
+
+                # 1. Leere Zeilen ignorieren
+                if not line:
+                    continue
+
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as e:
+                    print(
+                        f"⚠️ Persona-JSON übersprungen "
+                        f"({file.name}:{line_num}): {e}"
+                    )
+                    continue
+
+                # 2. Minimal-Validierung
+                if not isinstance(obj, dict):
+                    continue
+                if "messages" not in obj:
+                    continue
+                if not isinstance(obj["messages"], list):
+                    continue
+                if len(obj["messages"]) < 2:
+                    continue
+
+                persona.append(obj)
 
     return persona
 
 
 # ======================================================
-# 6. MAIN
+# 7. MAIN
 # ======================================================
 if __name__ == "__main__":
     print(f"📂 Skript-Ordner: {SCRIPT_DIR}")
@@ -191,7 +230,7 @@ if __name__ == "__main__":
             all_messages.extend(parse_daata_file(p))
 
     all_messages = [m for m in all_messages if isinstance(m[0], datetime)]
-    print(f"✅ Nachrichten gesamt (raw): {len(all_messages)}")
+    print(f"✅ Nachrichten gesamt (bereinigt): {len(all_messages)}")
 
     all_messages.sort(key=lambda x: x[0])
 
@@ -207,6 +246,7 @@ if __name__ == "__main__":
 
     # ---- Merge ----
     all_convs = discord_convs + persona_weighted
+    #all_convs =  persona_weighted
     random.shuffle(all_convs)
 
     split = int(len(all_convs) * TRAIN_SPLIT)
